@@ -63,75 +63,77 @@ class CalendarExport
             }
 
             //timezone
-            $this->stream->addItem('BEGIN:VTIMEZONE');
+            if ($cal->getTimezoneConversion()) {
+                $this->stream->addItem('BEGIN:VTIMEZONE');
 
-            $tz = $cal->getTimezone();
+                $tz = $cal->getTimezone();
 
-            $calEvents = $cal->getEvents();
+                $calEvents = $cal->getEvents();
 
-            // Fallback to current year
-            $startYear = $endYear = date('Y');
-            if ($calEvents->first() !== false) {
-                // Take first event as reference for timezone transitions
-                $firstEvent = $calEvents->first();
-                $startYear = $firstEvent->getStart()->format('Y');
-                $endYear = $firstEvent->getEnd()->format('Y');
+                // Fallback to current year
+                $startYear = $endYear = date('Y');
+                if ($calEvents->first() !== false) {
+                    // Take first event as reference for timezone transitions
+                    $firstEvent = $calEvents->first();
+                    $startYear = $firstEvent->getStart()->format('Y');
+                    $endYear = $firstEvent->getEnd()->format('Y');
+                }
+
+                $transitions = $tz->getTransitions(strtotime($startYear . '-01-01'), strtotime($endYear . '-12-31'));
+
+                $daylightSavings = array(
+                            'exists' => false,
+                            'start' => '',
+                            'offsetTo' => '',
+                            'offsetFrom' => ''
+                        );
+
+                $standard = array(
+                            'start' => '',
+                            'offsetTo' => '',
+                            'offsetFrom' => ''
+                        );
+
+                foreach ($transitions as $transition) {
+                    $varName = ($transition['isdst']) ? 'daylightSavings' : 'standard';
+
+                    ${$varName}['exists'] = true;
+                    ${$varName}['start'] = $this->formatter->getFormattedDateTime(new \DateTime($transition['time']));
+
+                    ${$varName}['offsetTo'] = $this->formatter->getFormattedTimeOffset($transition['offset']);
+
+                    //get previous offset
+                    $previousTimezoneObservance = $transition['ts'] - 100;
+                    $tzDate = new \DateTime('now', $tz);
+                    $tzDate->setTimestamp($previousTimezoneObservance);
+                    $offset = $tzDate->getOffset();
+
+                    ${$varName}['offsetFrom'] = $this->formatter->getFormattedTimeOffset($offset);
+                }
+
+                $this->stream->addItem('TZID:'.$tz->getName());
+
+                $this->stream->addItem('BEGIN:STANDARD')
+                        ->addItem('DTSTART:'.$standard['start'])
+                        ->addItem('TZOFFSETTO:'.$standard['offsetTo'])
+                        ->addItem('TZOFFSETFROM:'.$standard['offsetFrom']);
+
+                if ($daylightSavings['exists']) {
+                    $this->stream->addItem('RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU');
+                }
+                $this->stream->addItem('END:STANDARD');
+
+                if ($daylightSavings['exists']) {
+                    $this->stream->addItem('BEGIN:DAYLIGHT')
+                            ->addItem('DTSTART:'.$daylightSavings['start'])
+                            ->addItem('TZOFFSETTO:'.$daylightSavings['offsetTo'])
+                            ->addItem('TZOFFSETFROM:'.$daylightSavings['offsetFrom'])
+                            ->addItem('RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU')
+                        ->addItem('END:DAYLIGHT');
+                }
+
+                $this->stream->addItem('END:VTIMEZONE');
             }
-
-            $transitions = $tz->getTransitions(strtotime($startYear . '-01-01'), strtotime($endYear . '-12-31'));
-
-            $daylightSavings = array(
-                        'exists' => false,
-                        'start' => '',
-                        'offsetTo' => '',
-                        'offsetFrom' => ''
-                    );
-
-            $standard = array(
-                        'start' => '',
-                        'offsetTo' => '',
-                        'offsetFrom' => ''
-                    );
-
-            foreach ($transitions as $transition) {
-                $varName = ($transition['isdst']) ? 'daylightSavings' : 'standard';
-
-                ${$varName}['exists'] = true;
-                ${$varName}['start'] = $this->formatter->getFormattedDateTime(new \DateTime($transition['time']));
-
-                ${$varName}['offsetTo'] = $this->formatter->getFormattedTimeOffset($transition['offset']);
-
-                //get previous offset
-                $previousTimezoneObservance = $transition['ts'] - 100;
-                $tzDate = new \DateTime('now', $tz);
-                $tzDate->setTimestamp($previousTimezoneObservance);
-                $offset = $tzDate->getOffset();
-
-                ${$varName}['offsetFrom'] = $this->formatter->getFormattedTimeOffset($offset);
-            }
-
-            $this->stream->addItem('TZID:'.$tz->getName());
-
-            $this->stream->addItem('BEGIN:STANDARD')
-                    ->addItem('DTSTART:'.$standard['start'])
-                    ->addItem('TZOFFSETTO:'.$standard['offsetTo'])
-                    ->addItem('TZOFFSETFROM:'.$standard['offsetFrom']);
-
-            if ($daylightSavings['exists']) {
-                $this->stream->addItem('RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU');
-            }
-            $this->stream->addItem('END:STANDARD');
-
-            if ($daylightSavings['exists']) {
-                $this->stream->addItem('BEGIN:DAYLIGHT')
-                        ->addItem('DTSTART:'.$daylightSavings['start'])
-                        ->addItem('TZOFFSETTO:'.$daylightSavings['offsetTo'])
-                        ->addItem('TZOFFSETFROM:'.$daylightSavings['offsetFrom'])
-                        ->addItem('RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU')
-                    ->addItem('END:DAYLIGHT');
-            }
-
-            $this->stream->addItem('END:VTIMEZONE');
 
             //add events
             /* @var $event CalendarEvent */
@@ -144,10 +146,18 @@ class CalendarExport
                     $this->formatter->getFormattedDate($event->getEnd()) :
                     $this->formatter->getFormattedDateTime($event->getEnd());
 
-                $this->stream->addItem('BEGIN:VEVENT')
-                    ->addItem('UID:'.$event->getUid())
-                    ->addItem('DTSTART;TZID='.$tz->getName().':'. $dtStart)
-                    ->addItem('DTEND;TZID='.$tz->getName().':'. $dtEnd);
+                if ($cal->getTimezoneConversion()) {
+                    $this->stream->addItem('BEGIN:VEVENT')
+                        ->addItem('UID:'.$event->getUid())
+                        ->addItem('DTSTART;TZID='.$tz->getName().':'. $dtStart)
+                        ->addItem('DTEND;TZID='.$tz->getName().':'. $dtEnd);
+                } else {
+                    $this->stream->addItem('BEGIN:VEVENT')
+                        ->addItem('UID:'.$event->getUid())
+                        ->addItem('DTSTART:'. $dtStart)
+                        ->addItem('DTEND:'. $dtEnd);
+                }
+                
 
                 if ($event->getRecurrenceRule() instanceof RecurrenceRule) {
                     $this->stream->addItem($event->getRecurrenceRule()->__toString());

@@ -37,6 +37,13 @@ class Calendar
     private $timezone;
     
     /**
+     * Control if the calendar wil convert DateTime based on timezone or use floating time
+     *
+     * @var boolean
+     */
+    private $timezoneConversion = false;
+
+    /**
      * @var Provider
      */
     private $events;
@@ -50,6 +57,7 @@ class Calendar
      * @var Provider
      */
     private $freeBusy;
+
 
     /**
      * Calendar constructor.
@@ -205,6 +213,28 @@ class Calendar
     public function setTimezone(\DateTimeZone $timezone)
     {
         $this->timezone = $timezone;
+        return $this;
+    }
+
+    /**
+     * Get timezone conversion flag
+     *
+     * @return void
+     */
+    public function getTimezoneConversion()
+    {
+        return $this->timezoneConversion;
+    }
+
+    /**
+     * Set timezone conversion flag
+     *
+     * @param bool $timezoneConversion
+     * @return \Jsvrcek\ICS\Model\Calendar
+     */
+    public function setTimezoneConversion($timezoneConversion)
+    {
+        $this->timezoneConversion = $timezoneConversion;
         return $this;
     }
 
