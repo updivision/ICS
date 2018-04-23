@@ -146,8 +146,8 @@ class CalendarExport
 
                 $this->stream->addItem('BEGIN:VEVENT')
                     ->addItem('UID:'.$event->getUid())
-                    ->addItem('DTSTART:'. $dtStart)
-                    ->addItem('DTEND:'. $dtEnd);
+                    ->addItem('DTSTART;TZID='.$tz->getName().':'. $dtStart)
+                    ->addItem('DTEND;TZID='.$tz->getName().':'. $dtEnd);
 
                 if ($event->getRecurrenceRule() instanceof RecurrenceRule) {
                     $this->stream->addItem($event->getRecurrenceRule()->__toString());
